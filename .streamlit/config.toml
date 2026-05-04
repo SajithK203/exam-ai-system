@@ -1,0 +1,11 @@
+[client]
+showErrorDetails = true
+
+[runner]
+magicEnabled = true
+
+[logger]
+level = "info"
+
+[browser]
+gatherUsageStats = false

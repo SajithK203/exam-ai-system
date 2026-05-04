@@ -1,0 +1,64 @@
+# Environment variables
+.env
+.env.local
+
+# Virtual environment
+venv/
+env/
+ENV/
+.venv
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Database
+*.db
+*.sqlite
+*.sqlite3
+mysql_data/
+
+# Logs
+logs/
+*.log
+
+# Uploads
+uploads/
+*.pdf
+
+# Streamlit cache
+.streamlit/cache/
+
+# IDE
+.pytest_cache/
+.coverage
+htmlcov/
+
+# OS
+Thumbs.db
