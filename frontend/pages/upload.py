@@ -71,6 +71,14 @@ def show_upload_page():
                     
                     st.success("✅ Text extracted")
                     
+                    if not raw_text.strip() or len(raw_text) < 50:
+                        st.warning(
+                            "⚠️ **Warning**: The PDF appears to be a scanned image or contains minimal text. "
+                            "Please ensure you're uploading text-based PDFs (not image scans). "
+                            "The system requires PDFs with selectable text content."
+                        )
+                        return
+                    
                     # Step 2: Clean text
                     st.info("Step 2/4: Cleaning text...")
                     cleaner = TextCleaner()

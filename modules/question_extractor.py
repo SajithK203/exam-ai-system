@@ -26,7 +26,7 @@ class QuestionExtractor:
     @staticmethod
     def extract_questions(text, min_length=None):
         """
-        Extract questions from text using pattern matching.
+        Extract questions from text using pattern matching with fallback methods.
         
         Args:
             text: Cleaned text from PDF
@@ -44,18 +44,34 @@ class QuestionExtractor:
             numbered_questions = QuestionExtractor._extract_numbered_questions(text)
             if numbered_questions:
                 questions.extend(numbered_questions)
+                logger.debug(f"Numbered pattern found {len(numbered_questions)} questions")
             
             # Try lettered pattern (A), B), etc.)
             if len(questions) < 5:  # If numbered didn't work well
                 lettered_questions = QuestionExtractor._extract_lettered_questions(text)
                 if lettered_questions:
                     questions.extend(lettered_questions)
+                    logger.debug(f"Lettered pattern found {len(lettered_questions)} questions")
+            
+            # Fallback: Extract sentences ending with question marks
+            if len(questions) < 3:
+                fallback_questions = QuestionExtractor._extract_by_question_marks(text)
+                if fallback_questions:
+                    questions.extend(fallback_questions)
+                    logger.debug(f"Question mark fallback found {len(fallback_questions)} questions")
+            
+            # Final fallback: Split by common delimiters
+            if len(questions) == 0:
+                fallback_questions = QuestionExtractor._extract_by_delimiters(text)
+                if fallback_questions:
+                    questions.extend(fallback_questions)
+                    logger.debug(f"Delimiter fallback found {len(fallback_questions)} questions")
             
             # Filter by minimum length and remove duplicates
             questions = [q.strip() for q in questions if len(q.strip()) >= min_length]
             questions = list(dict.fromkeys(questions))  # Remove duplicates while preserving order
             
-            logger.info(f"Extracted {len(questions)} questions from text")
+            logger.info(f"Extracted {len(questions)} questions from text (min_length={min_length})")
             return questions
             
         except Exception as e:
@@ -112,6 +128,63 @@ class QuestionExtractor:
             return text.strip()
         except Exception:
             return text.strip()
+    
+    @staticmethod
+    def _extract_by_question_marks(text):
+        """Fallback: Extract sentences ending with question marks."""
+        questions = []
+        try:
+            # Find all sentences ending with ?
+            pattern = r'([^.!?]*\?)'
+            matches = re.finditer(pattern, text, re.MULTILINE)
+            
+            for match in matches:
+                question = match.group(1).strip()
+                if len(question) > 20:  # Filter very short lines
+                    questions.append(question)
+            
+            logger.debug(f"Question mark extraction found {len(questions)} questions")
+        except Exception as e:
+            logger.warning(f"Error in question mark extraction: {e}")
+        
+        return questions
+    
+    @staticmethod
+    def _extract_by_delimiters(text):
+        """Fallback: Split text by common delimiters and extract potential questions."""
+        questions = []
+        try:
+            # Split by common delimiters
+            delimiter_pattern = r'(?:^|\n)\s*(?:Q\.?|Question)\s*\d+[\.:]*\s*|\n(?=\S)'
+            parts = re.split(delimiter_pattern, text)
+            
+            for part in parts:
+                if not part.strip():
+                    continue
+                    
+                # Split each part into lines
+                lines = part.split('\n')
+                for line in lines:
+                    line = line.strip()
+                    
+                    # Skip very short lines and likely headers
+                    if len(line) < 20 or line.isupper():
+                        continue
+                    
+                    # Remove option markers from beginning
+                    clean_line = re.sub(r'^[A-D][\)\.:\-]\s*', '', line)
+                    
+                    # Stop at option markers
+                    clean_line = re.split(r'\n\s*[A-D][\)\.:]', clean_line)[0].strip()
+                    
+                    if len(clean_line) >= 20 and clean_line not in questions:
+                        questions.append(clean_line)
+            
+            logger.debug(f"Delimiter extraction found {len(questions)} questions")
+        except Exception as e:
+            logger.warning(f"Error in delimiter extraction: {e}")
+        
+        return questions
     
     @staticmethod
     def identify_question_type(question_text):
