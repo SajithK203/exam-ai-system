@@ -5,6 +5,7 @@ Provides high-level analytics on extracted data.
 
 import logging
 from database.queries.analytics_queries import AnalyticsQueries
+from utils.serializer import sanitize
 
 logger = logging.getLogger(__name__)
 
@@ -18,7 +19,7 @@ class AnalyticsEngine:
         Get comprehensive analysis for a subject.
         
         Returns:
-            Dictionary with all analytics data
+            Dictionary with all analytics data (with sanitized types)
         """
         try:
             analysis = {
@@ -31,6 +32,9 @@ class AnalyticsEngine:
                 'papers_per_year': AnalyticsQueries.get_papers_per_year(subject),
             }
             
+            # Sanitize all data to convert numpy types to native Python types
+            analysis = sanitize(analysis)
+            
             logger.info(f"Generated full analysis for {subject}")
             return analysis
             
@@ -42,12 +46,13 @@ class AnalyticsEngine:
     def get_study_focus_areas(subject, top_n=5):
         """
         Get top focus areas for studying.
-        
+
         Returns:
-            List of topics to focus on (sorted by frequency)
+            List of topics to focus on (sorted by frequency, sanitized types)
         """
         try:
             topics = AnalyticsQueries.get_top_topics(subject, limit=top_n)
+            topics = sanitize(topics)
             logger.info(f"Generated study focus areas for {subject}")
             return topics
         except Exception as e:

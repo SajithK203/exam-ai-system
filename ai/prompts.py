@@ -5,6 +5,7 @@ Used to generate consistent and effective prompts for Groq API.
 
 import logging
 import json
+from utils.serializer import sanitize
 
 logger = logging.getLogger(__name__)
 
@@ -107,6 +108,9 @@ Ensure the mock exam matches typical exam patterns."""
     def get_trend_analysis_prompt(subject, trends_data):
         """Generate prompt for trend analysis."""
         try:
+            # Sanitize data to handle numpy types
+            trends_data = sanitize(trends_data)
+            
             prompt = f"""Analyze the examination trends for {subject}:
 
 Analysis Data:
@@ -131,6 +135,9 @@ Be specific and data-driven."""
     def get_weakness_identification_prompt(subject, topics_data, performance_data):
         """Generate prompt to identify weak areas."""
         try:
+            # Sanitize data to handle numpy types
+            topics_data = sanitize(topics_data)
+            
             prompt = f"""Based on {subject} exam data, identify potential weak areas:
 
 Most Frequently Asked Topics:
@@ -155,6 +162,9 @@ Provide actionable guidance."""
     def get_exam_strategy_prompt(subject, exam_analysis):
         """Generate prompt for exam strategy recommendations."""
         try:
+            # Sanitize data to handle numpy types
+            exam_analysis = sanitize(exam_analysis)
+            
             prompt = f"""Provide an exam strategy for {subject} based on historical analysis:
 
 Exam Characteristics:
