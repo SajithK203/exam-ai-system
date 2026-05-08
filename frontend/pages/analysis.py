@@ -218,19 +218,12 @@ def show_analysis_page():
         if top_topics:
             focus_df = pd.DataFrame(top_topics[:5])
             focus_df.index = focus_df.index + 1
+            # Ensure frequency is int for proper display
+            focus_df['frequency'] = focus_df['frequency'].astype(int)
             
             st.dataframe(
                 focus_df,
-                column_config={
-                    "topic_name": st.column_config.TextColumn("Topic"),
-                    "frequency": st.column_config.ProgressColumn(
-                        "Frequency",
-                        min_value=0,
-                        max_value=focus_df['frequency'].max()
-                    ),
-                },
-                hide_index=False,
-                width='stretch'
+                use_container_width=True
             )
         else:
             st.info("📭 No focus areas recommended yet")
