@@ -1,5 +1,6 @@
 [client]
 showErrorDetails = true
+showSidebarNavigation = false
 
 [runner]
 magicEnabled = true
@@ -9,3 +10,10 @@ level = "info"
 
 [browser]
 gatherUsageStats = false
+
+[theme]
+base = "dark"
+backgroundColor = "#0f172a"
+secondaryBackgroundColor = "#1e293b"
+textColor = "#f8fafc"
+primaryColor = "#7c3aed"
