@@ -16,11 +16,11 @@ class PromptTemplates:
     @staticmethod
     def get_study_recommendation_prompt(subject, topics_data):
         """
-        Generate prompt for study recommendation.
+        Generate prompt for evidence-based study recommendation.
         
         Args:
             subject: Subject name
-            topics_data: Dictionary with topic analysis
+            topics_data: Dictionary with topic analysis including intelligence scores
             
         Returns:
             Formatted prompt
@@ -28,24 +28,31 @@ class PromptTemplates:
         try:
             top_topics = topics_data.get('top_topics', [])
             repeated_questions = topics_data.get('repeated_questions', [])
+            total_analyzed = topics_data.get('total_topics_analyzed', 0)
             
-            topics_text = "\\n".join([f"- {t['topic_name']}: {t['frequency']} times" 
-                                     for t in top_topics[:5]])
+            topics_text = ""
+            for t in top_topics[:10]:
+                score = t.get('intelligence_score', t.get('frequency', 0))
+                topics_text += f"- {t['topic_name']}: {t['frequency']} times (Score: {score:.0f})\n"
             
-            prompt = f"""Based on the following exam analysis for {subject}, provide focused study recommendations:
+            prompt = f"""Based ONLY on the following evidence, provide focused study recommendations for {subject}:
 
-Top Frequently Asked Topics:
+EVIDENCE DATA:
+Total Topics Analyzed: {total_analyzed}
+
+Top Priority Topics (by intelligence score):
 {topics_text}
 
-Repeated Questions Found: {len(repeated_questions)}
+Repeated/Important Questions Found: {len(repeated_questions)}
 
-Please provide:
-1. Priority topics to focus on
-2. Why these topics are important
-3. Suggested study approach
-4. Estimated time allocation for each topic
+Instructions:
+1. Rank the topics by importance using ONLY the scores and frequencies provided
+2. Cite specific numbers for each recommendation
+3. Explain WHY each topic matters based on appearance frequency
+4. Suggest study approach based on patterns
+5. Estimate time allocation based on importance score
 
-Keep recommendations concise and actionable."""
+CRITICAL: Do NOT provide generic study tips. Every recommendation must cite the data."""
             
             return prompt
             

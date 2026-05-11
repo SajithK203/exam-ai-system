@@ -59,38 +59,91 @@ class RecommendationEngine:
     @staticmethod
     def generate_mock_exam_suggestions(subject):
         """
-        Generate suggestions for mock exam creation.
+        Generate mock exam suggestions using REAL questions with evidence.
+        Selects questions based on: topic importance, difficulty balance, recency.
         
         Args:
             subject: Subject name
             
         Returns:
-            Dictionary with mock exam suggestions
+            Dictionary with mock exam recommendations and real question examples
         """
         try:
+            from database.queries.question_queries import QuestionQueries
+            
             # Get analysis data
-            top_topics = AnalyticsQueries.get_top_topics(subject, limit=5)
+            top_topics = AnalyticsQueries.get_top_topics(subject, limit=10)
             question_types = AnalyticsQueries.get_question_type_distribution(subject)
             difficulty = AnalyticsQueries.get_difficulty_distribution(subject)
             
-            # Prepare AI prompt
-            exam_data = {
-                'top_topics': top_topics,
-                'question_types': question_types,
-                'difficulty_levels': difficulty,
-            }
+            # Get real questions from top topics for mock exam
+            mock_exam_structure = []
+            real_question_samples = []
             
+            for i, topic in enumerate(top_topics[:5]):  # Top 5 topics
+                topic_name = topic['topic_name']
+                frequency = topic['frequency']
+                
+                # Calculate questions to include in mock (based on importance)
+                questions_count = max(2, int(frequency / 2))
+                
+                # Get real questions for this topic
+                topic_questions = QuestionQueries.get_questions_by_topic_with_subject(subject, topic_name, limit=5)
+                
+                if topic_questions:
+                    real_question_samples.extend(topic_questions[:questions_count])
+                
+                mock_exam_structure.append({
+                    'topic': topic_name,
+                    'frequency': frequency,
+                    'recommended_questions': questions_count,
+                    'difficulty_suggestion': 'Mixed' if frequency >= 5 else 'Medium'
+                })
+            
+            # Get AI suggestions with evidence
             groq = get_groq_client()
-            suggestions = groq.generate_insight('mock_exam', exam_data)
+            
+            prompt = f"""Based ONLY on the following evidence, create a mock exam structure for {subject}:
+
+TOPIC IMPORTANCE (based on frequency analysis):
+"""
+            for item in mock_exam_structure:
+                prompt += f"- {item['topic']}: {item['recommended_questions']} questions (appeared {item['frequency']} times)\n"
+            
+            prompt += f"""
+QUESTION TYPE DISTRIBUTION:
+"""
+            for qtype in question_types:
+                prompt += f"- {qtype['question_type']}: {qtype['percentage']}%\n"
+            
+            prompt += f"""
+DIFFICULTY DISTRIBUTION:
+"""
+            for diff in difficulty:
+                prompt += f"- {diff['difficulty_level']}: Include {diff.get('count', 0)} questions\n"
+            
+            prompt += f"""
+Based ONLY on this evidence, provide:
+1. Complete mock exam structure with topic allocation
+2. Recommended difficulty mix
+3. Total marks suggestion
+4. Estimated time (in minutes)
+5. Why this structure matches actual exam patterns
+
+Reference the data provided. Do NOT suggest random topics."""
+            
+            suggestions = groq.generate_response(prompt)
             
             result = {
                 'subject': subject,
                 'suggestions': suggestions,
-                'recommended_topics': top_topics,
+                'recommended_topics': mock_exam_structure,
+                'sample_questions': real_question_samples[:10],  # Include real question samples
+                'confidence': 'High' if len(real_question_samples) >= 10 else 'Medium',
                 'generated_at': __import__('datetime').datetime.now().isoformat()
             }
             
-            logger.info(f"Generated mock exam suggestions for {subject}")
+            logger.info(f"Generated evidence-based mock exam suggestions for {subject}")
             return result
             
         except Exception as e:
@@ -117,10 +170,12 @@ class RecommendationEngine:
             if not topic_id:
                 raise ValueError(f"Topic not found: {topic_name}")
             
-            questions = AnalyticsQueries.get_questions_by_topic(topic_id)
+            from database.queries.question_queries import QuestionQueries
+            # FIX: get_questions_by_topic is in QuestionQueries, not AnalyticsQueries
+            questions = QuestionQueries.get_questions_by_topic(topic_id, limit=10)
             trends = AnalyticsQueries.get_topic_trend_analysis(subject, topic_id)
             
-            frequency = sum(1 for q in questions)
+            frequency = len(questions)
             
             # Get AI guidance
             groq = get_groq_client()
@@ -152,35 +207,69 @@ Cover: key concepts, common mistakes, practice tips."""
     @staticmethod
     def generate_weak_area_analysis(subject):
         """
-        Identify and provide recommendations for weak areas.
+        Identify weak areas with evidence-based intelligent scoring.
+        Combines: frequency × difficulty × recurrence
         
         Args:
             subject: Subject name
             
         Returns:
-            Analysis of weak areas
+            Analysis of weak areas with supporting evidence
         """
         try:
-            # Get comprehensive analysis
-            analysis = AnalyticsEngine.get_full_analysis(subject)
+            # Get weak areas with intelligent scoring
+            weak_areas_scored = AnalyticsQueries.get_weak_areas_scored(subject, years=5)
             
+            # Get top weak areas
+            top_weak_areas = weak_areas_scored[:10] if weak_areas_scored else []
+            
+            # Build evidence summary
+            weak_areas_evidence = []
+            for area in top_weak_areas:
+                weak_areas_evidence.append({
+                    'topic': area.get('topic_name'),
+                    'frequency': area.get('frequency'),
+                    'years_appeared': area.get('years_appeared'),
+                    'difficulty_level': area.get('avg_difficulty'),
+                    'importance_score': area.get('importance_score')
+                })
+            
+            # Get AI analysis with evidence
             groq = get_groq_client()
             
-            prompt = f"""Based on {subject} exam patterns, identify potential weak areas and provide targeted improvement strategies:
+            prompt = f"""Based ONLY on the following evidence, identify weak areas in {subject} that need focus:
 
-Data: {analysis}
-
-Provide: 1) Weak areas students typically struggle with, 2) Why they're important, 3) How to overcome them"""
+WEAK AREAS (ranked by difficulty × frequency × recurrence):
+"""
+            for i, area in enumerate(weak_areas_evidence[:5], 1):
+                prompt += f"""
+{i}. {area['topic']}
+   - Frequency: {area['frequency']} questions
+   - Years appeared: {area['years_appeared']} years
+   - Avg difficulty level: {area['difficulty_level']:.1f}/3
+   - Importance score: {area['importance_score']:.2f}
+"""
             
-            weak_areas = groq.generate_response(prompt)
+            prompt += f"""
+Based ONLY on this evidence, provide:
+1. Top 3 weak areas with specific reasons (cite the data)
+2. Why these areas are challenging
+3. Targeted improvement strategy for each
+4. Confidence level in this assessment (High/Medium/Low)
+
+Do NOT provide generic advice. Reference the numbers and patterns shown."""
+            
+            analysis = groq.generate_response(prompt)
             
             result = {
                 'subject': subject,
-                'analysis': weak_areas,
+                'weak_areas_ranked': weak_areas_evidence,
+                'analysis': analysis,
+                'confidence': 'High' if len(weak_areas_evidence) >= 5 else 'Medium',
                 'generated_at': __import__('datetime').datetime.now().isoformat()
             }
             
-            logger.info(f"Generated weak area analysis for {subject}")
+            logger.info(f"Generated evidence-based weak area analysis for {subject}")
             return result
             
         except Exception as e:
@@ -190,13 +279,13 @@ Provide: 1) Weak areas students typically struggle with, 2) Why they're importan
     @staticmethod
     def generate_time_management_plan(subject):
         """
-        Generate time management and pacing strategy.
+        Generate evidence-based time management and pacing strategy.
         
         Args:
             subject: Subject name
             
         Returns:
-            Time management recommendations
+            Time management recommendations with evidence
         """
         try:
             # Get exam statistics
@@ -206,14 +295,40 @@ Provide: 1) Weak areas students typically struggle with, 2) Why they're importan
             if not subject_stat:
                 raise ValueError(f"No data for subject: {subject}")
             
+            # Get question type distribution
+            question_types = AnalyticsQueries.get_question_type_distribution(subject)
+            
+            # Get difficulty distribution
+            difficulty = AnalyticsQueries.get_difficulty_distribution(subject)
+            
             groq = get_groq_client()
             
-            prompt = f"""Create a time management strategy for {subject}:
-- Papers: {subject_stat['total_papers']}
-- Questions: {subject_stat['total_questions']}
-- Avg per paper: {subject_stat['avg_questions_per_paper']}
+            prompt = f"""Create a data-driven time management strategy for {subject} based on ONLY this evidence:
 
-Provide: time per question, section strategy, revision time."""
+EXAM STATISTICS:
+- Total Papers Analyzed: {subject_stat['total_papers']}
+- Total Questions: {subject_stat['total_questions']}
+- Average per Paper: {subject_stat['avg_questions_per_paper']:.1f}
+- Years Covered: {subject_stat['years_covered']} years
+
+QUESTION DISTRIBUTION:
+"""
+            for qtype in question_types:
+                prompt += f"- {qtype['question_type']}: {qtype['count']} questions ({qtype['percentage']}%)\n"
+            
+            prompt += "\nDIFFICULTY DISTRIBUTION:\n"
+            for diff in difficulty:
+                prompt += f"- {diff['difficulty_level']}: {diff['count']} questions\n"
+            
+            prompt += f"""
+Based ONLY on this evidence, provide:
+1. Recommended time per question (in minutes)
+2. How to allocate time across question types
+3. Section-wise strategy
+4. Revision time recommendation
+5. Confidence level in these recommendations
+
+Be specific and cite the data provided. Do NOT provide generic advice."""
             
             strategy = groq.generate_response(prompt)
             
@@ -221,10 +336,13 @@ Provide: time per question, section strategy, revision time."""
                 'subject': subject,
                 'strategy': strategy,
                 'exam_stats': subject_stat,
+                'question_distribution': question_types,
+                'difficulty_distribution': difficulty,
+                'confidence': 'High' if subject_stat['total_papers'] >= 10 else 'Medium',
                 'generated_at': __import__('datetime').datetime.now().isoformat()
             }
             
-            logger.info(f"Generated time management plan for {subject}")
+            logger.info(f"Generated evidence-based time management plan for {subject}")
             return result
             
         except Exception as e:

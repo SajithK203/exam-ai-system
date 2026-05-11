@@ -271,3 +271,88 @@ class AnalyticsQueries:
         except Exception as e:
             logger.error(f"Error fetching question statistics: {e}")
             raise
+    
+    @staticmethod
+    def get_topic_difficulty_distribution(subject, topic_id):
+        """Get difficulty distribution for a specific topic."""
+        query = """
+            SELECT 
+                q.difficulty_level,
+                COUNT(q.id) as count,
+                ROUND(COUNT(q.id) * 100 / (SELECT COUNT(*) FROM questions q2 
+                    WHERE q2.topic_id = %s), 2) as percentage
+            FROM questions q
+            JOIN papers p ON q.paper_id = p.id
+            WHERE q.topic_id = %s AND p.subject = %s
+            GROUP BY q.difficulty_level
+            ORDER BY FIELD(q.difficulty_level, 'Easy', 'Medium', 'Hard')
+        """
+        try:
+            result = DatabaseConnection.execute_query(query, (topic_id, topic_id, subject), fetch_all=True)
+            return result
+        except Exception as e:
+            logger.error(f"Error fetching topic difficulty distribution: {e}")
+            raise
+    
+    @staticmethod
+    def get_weak_areas_scored(subject, years=5):
+        """
+        Get weak areas using intelligent scoring.
+        Weak score = (frequency × 3) + (avg_difficulty × 2) + (recurrence_years × 4)
+        """
+        query = """
+            SELECT 
+                t.topic_name,
+                COUNT(q.id) as frequency,
+                COUNT(DISTINCT p.year) as years_appeared,
+                ROUND(AVG(CASE 
+                    WHEN q.difficulty_level = 'Hard' THEN 3
+                    WHEN q.difficulty_level = 'Medium' THEN 2
+                    WHEN q.difficulty_level = 'Easy' THEN 1
+                    ELSE 1
+                END), 2) as avg_difficulty,
+                COUNT(DISTINCT q.id) / COUNT(DISTINCT p.year) as importance_score,
+                (COUNT(q.id) * 3 + AVG(CASE 
+                    WHEN q.difficulty_level = 'Hard' THEN 3
+                    WHEN q.difficulty_level = 'Medium' THEN 2
+                    WHEN q.difficulty_level = 'Easy' THEN 1
+                    ELSE 1
+                END) * 2 + COUNT(DISTINCT p.year) * 4) as weak_score
+            FROM questions q
+            LEFT JOIN topics t ON q.topic_id = t.id
+            JOIN papers p ON q.paper_id = p.id
+            WHERE p.subject = %s
+            AND p.year >= (SELECT MAX(year) - %s FROM papers)
+            GROUP BY q.topic_id, t.topic_name
+            ORDER BY weak_score DESC
+        """
+        try:
+            result = DatabaseConnection.execute_query(query, (subject, years), fetch_all=True)
+            return result
+        except Exception as e:
+            logger.error(f"Error fetching weak areas scored: {e}")
+            raise
+    
+    @staticmethod
+    def get_question_examples_with_years(subject, topic_id, limit=10):
+        """Get example questions for a topic showing evolution over years."""
+        query = """
+            SELECT 
+                q.id,
+                q.question_text,
+                q.difficulty_level,
+                q.question_type,
+                p.year,
+                q.marks_allocated
+            FROM questions q
+            JOIN papers p ON q.paper_id = p.id
+            WHERE p.subject = %s AND q.topic_id = %s
+            ORDER BY p.year DESC, q.difficulty_level DESC
+            LIMIT %s
+        """
+        try:
+            result = DatabaseConnection.execute_query(query, (subject, topic_id, limit), fetch_all=True)
+            return result
+        except Exception as e:
+            logger.error(f"Error fetching question examples: {e}")
+            raise
