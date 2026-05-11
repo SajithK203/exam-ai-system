@@ -198,3 +198,34 @@ class QuestionQueries:
         except Exception as e:
             logger.error(f"Error fetching repeated questions: {e}")
             raise
+    
+    @staticmethod
+    def get_questions_by_topic_with_subject(subject, topic_name, limit=None):
+        """Get questions for a specific topic and subject."""
+        if limit:
+            query = """
+                SELECT q.*, p.subject, p.year, t.topic_name
+                FROM questions q
+                JOIN papers p ON q.paper_id = p.id
+                JOIN topics t ON q.topic_id = t.id
+                WHERE p.subject = %s AND t.topic_name = %s
+                ORDER BY p.year DESC, q.difficulty_level DESC
+                LIMIT %s
+            """
+            result = DatabaseConnection.execute_query(query, (subject, topic_name, limit), fetch_all=True)
+        else:
+            query = """
+                SELECT q.*, p.subject, p.year, t.topic_name
+                FROM questions q
+                JOIN papers p ON q.paper_id = p.id
+                JOIN topics t ON q.topic_id = t.id
+                WHERE p.subject = %s AND t.topic_name = %s
+                ORDER BY p.year DESC, q.difficulty_level DESC
+            """
+            result = DatabaseConnection.execute_query(query, (subject, topic_name), fetch_all=True)
+        
+        try:
+            return result
+        except Exception as e:
+            logger.error(f"Error fetching questions by topic and subject: {e}")
+            raise
