@@ -73,7 +73,7 @@ CACHE_TTL_MEDIUM = 3600  # 1 hour
 CACHE_TTL_LONG = 86400  # 1 day
 
 # AI Model Settings
-DEFAULT_AI_MODEL = "mixtral-8x7b-32768"
+DEFAULT_AI_MODEL = "llama-3.3-70b-versatile"  # Updated from deprecated llama-3-70b-versatile
 DEFAULT_AI_TEMPERATURE = 0.7
 DEFAULT_AI_MAX_TOKENS = 1000
 

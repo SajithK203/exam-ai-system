@@ -70,7 +70,7 @@ ANALYTICS_CONFIG = {
 
 # AI Configuration
 AI_CONFIG = {
-    "model": "mixtral-8x7b-32768",  # Groq model
+    "model": "llama-3.3-70b-versatile",  # Updated from deprecated llama-3-70b-versatile
     "temperature": 0.7,
     "max_tokens": 1000,
     "top_p": 1
