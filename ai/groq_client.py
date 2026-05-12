@@ -20,7 +20,7 @@ class GroqClient:
             raise ValueError("GROQ_API_KEY is required")
         
         self.client = Groq(api_key=GROQ_API_KEY)
-        self.model = AI_CONFIG.get('model', 'mixtral-8x7b-32768')
+        self.model = AI_CONFIG.get('model', 'llama-3-70b-versatile')
         self.temperature = AI_CONFIG.get('temperature', 0.7)
         self.max_tokens = AI_CONFIG.get('max_tokens', 1000)
         self.top_p = AI_CONFIG.get('top_p', 1)
@@ -136,6 +136,12 @@ class GroqClient:
 
 # Singleton instance
 _groq_client = None
+
+
+def reset_groq_client():
+    """Reset the Groq client singleton (for testing/reloading)."""
+    global _groq_client
+    _groq_client = None
 
 
 def get_groq_client():

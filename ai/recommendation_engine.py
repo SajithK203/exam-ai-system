@@ -17,39 +17,66 @@ class RecommendationEngine:
     @staticmethod
     def generate_study_plan(subject):
         """
-        Generate comprehensive study plan for a subject.
+        Generate evidence-based study plan with topic intelligence scores.
         
         Args:
             subject: Subject name
             
         Returns:
-            Dictionary with study plan
+            Dictionary with evidence-backed study plan
         """
         try:
-            # Get analytics data
-            top_topics = AnalyticsQueries.get_top_topics(subject, limit=10)
-            repeated_questions = AnalyticsQueries.get_repeated_questions()
+            # Get evidence data
+            top_topics = AnalyticsQueries.get_top_topics(subject, limit=15)
+            trending_topics = AnalyticsQueries.get_trending_topics(subject, years=5)
             question_types = AnalyticsQueries.get_question_type_distribution(subject)
             
-            # Prepare data for AI
+            # Calculate topic intelligence scores
+            scored_topics = []
+            for topic in top_topics:
+                topic_name = topic['topic_name']
+                frequency = topic['frequency']
+                
+                # Calculate trend (increase = positive)
+                trend_score = 0
+                for trend in trending_topics:
+                    if trend.get('topic_name') == topic_name:
+                        trend_score = trend.get('frequency', 0) * 5  # Recent weight
+                
+                # Intelligence score = frequency + trend
+                intelligence_score = min(100, (frequency * 4) + trend_score)
+                
+                scored_topics.append({
+                    **topic,
+                    'intelligence_score': intelligence_score,
+                    'confidence': 'High' if frequency >= 5 else 'Medium' if frequency >= 2 else 'Low'
+                })
+            
+            # Sort by intelligence score
+            scored_topics.sort(key=lambda x: x['intelligence_score'], reverse=True)
+            
+            # Prepare evidence for AI
             topics_data = {
-                'top_topics': top_topics,
-                'repeated_questions': repeated_questions,
+                'top_topics': scored_topics[:10],
                 'question_types': question_types,
+                'total_topics_analyzed': len(top_topics)
             }
             
-            # Get AI recommendation
+            # Get AI recommendation with evidence
             groq = get_groq_client()
             recommendation = groq.generate_study_recommendation(subject, topics_data)
             
             study_plan = {
                 'subject': subject,
-                'top_topics': top_topics[:5],
+                'top_topics': scored_topics[:5],
+                'medium_priority': scored_topics[5:10],
+                'topic_intelligence_scores': scored_topics[:10],
                 'ai_recommendation': recommendation,
+                'confidence': 'High' if len(scored_topics) > 5 else 'Medium',
                 'generated_at': __import__('datetime').datetime.now().isoformat()
             }
             
-            logger.info(f"Generated study plan for {subject}")
+            logger.info(f"Generated evidence-based study plan for {subject}")
             return study_plan
             
         except Exception as e:
