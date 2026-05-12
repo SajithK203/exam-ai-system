@@ -20,7 +20,7 @@ class GroqClient:
             raise ValueError("GROQ_API_KEY is required")
         
         self.client = Groq(api_key=GROQ_API_KEY)
-        self.model = AI_CONFIG.get('model', 'llama-3-70b-versatile')
+        self.model = AI_CONFIG.get('model', 'llama-3.3-70b-versatile')  # Updated from deprecated llama-3-70b-versatile
         self.temperature = AI_CONFIG.get('temperature', 0.7)
         self.max_tokens = AI_CONFIG.get('max_tokens', 1000)
         self.top_p = AI_CONFIG.get('top_p', 1)
