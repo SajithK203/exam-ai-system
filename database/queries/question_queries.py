@@ -271,22 +271,169 @@ class QuestionQueries:
             raise
 
     @staticmethod
-    def search_questions(search_text):
-        """Search questions using full-text search."""
-        query = """
-            SELECT q.*, p.subject, p.year, t.topic_name
+    def search_questions(search_text, subject=None, limit=50):
+        """
+        Search questions using LIKE-based matching with optional subject filter.
+        More robust than FULLTEXT — works on any MySQL setup without special indexes.
+        Returns results ordered by relevance: topic match first, then text match.
+        """
+        if not search_text or not search_text.strip():
+            return []
+
+        term = f"%{search_text.strip()}%"
+        params = []
+        subject_clause = ""
+        if subject and subject != "All":
+            subject_clause = "AND p.subject = %s"
+            params.append(subject)
+
+        # Priority 1: Questions where topic_name matches the search
+        # Priority 2: Questions where question_text contains the search
+        query = f"""
+            SELECT
+                q.id,
+                q.question_text,
+                q.question_type,
+                q.difficulty_level,
+                q.marks_allocated,
+                q.ai_classified,
+                q.topic_confidence,
+                p.subject,
+                p.year,
+                t.topic_name,
+                CASE
+                    WHEN t.topic_name LIKE %s THEN 2
+                    WHEN q.question_text LIKE %s THEN 1
+                    ELSE 0
+                END AS relevance_score
             FROM questions q
             JOIN papers p ON q.paper_id = p.id
             LEFT JOIN topics t ON q.topic_id = t.id
-            WHERE MATCH(q.question_text) AGAINST(%s IN BOOLEAN MODE)
-            ORDER BY p.year DESC
+            WHERE (q.question_text LIKE %s OR t.topic_name LIKE %s)
+            {subject_clause}
+            ORDER BY relevance_score DESC, p.year DESC
+            LIMIT %s
         """
+        params = [term, term, term, term] + params + [limit]
+
         try:
-            result = DatabaseConnection.execute_query(query, (search_text,), fetch_all=True)
-            return result
+            result = DatabaseConnection.execute_query(query, params, fetch_all=True)
+            return result if result else []
         except Exception as e:
             logger.error(f"Error searching questions: {e}")
-            raise
+            return []
+
+    @staticmethod
+    def get_search_suggestions(query_text, subject=None, limit=10):
+        """
+        Return live autocomplete suggestions for the search bar.
+        Combines:
+          1. Matching topic names (highest priority — exact concept labels)
+          2. Matching question type labels
+          3. Common words from question texts matching the query
+        Each suggestion has: {text, type, count}
+        """
+        if not query_text or len(query_text.strip()) < 2:
+            return []
+
+        term = f"%{query_text.strip()}%"
+        suggestions = []
+
+        # Source 1: Topic names
+        topic_query = """
+            SELECT
+                t.topic_name AS suggestion_text,
+                'topic' AS suggestion_type,
+                COUNT(q.id) AS question_count
+            FROM topics t
+            LEFT JOIN questions q ON q.topic_id = t.id
+            WHERE t.topic_name LIKE %s
+            GROUP BY t.id, t.topic_name
+            ORDER BY question_count DESC
+            LIMIT %s
+        """
+        try:
+            topic_results = DatabaseConnection.execute_query(
+                topic_query, (term, limit), fetch_all=True
+            )
+            if topic_results:
+                suggestions.extend(topic_results)
+        except Exception as e:
+            logger.debug(f"Topic suggestion error: {e}")
+
+        # Source 2: Question types matching query
+        type_terms = ['Multiple Choice', 'Short Answer', 'Long Answer', 'Practical']
+        for qt in type_terms:
+            if query_text.lower() in qt.lower():
+                suggestions.append({
+                    'suggestion_text': qt,
+                    'suggestion_type': 'type',
+                    'question_count': 0
+                })
+
+        # Source 3: If we have fewer than 5 suggestions, pull subject names too
+        if len(suggestions) < 5:
+            subj_query = """
+                SELECT
+                    p.subject AS suggestion_text,
+                    'subject' AS suggestion_type,
+                    COUNT(DISTINCT q.id) AS question_count
+                FROM papers p
+                LEFT JOIN questions q ON q.paper_id = p.id
+                WHERE p.subject LIKE %s
+                GROUP BY p.subject
+                ORDER BY question_count DESC
+                LIMIT 3
+            """
+            try:
+                subj_results = DatabaseConnection.execute_query(
+                    subj_query, (term,), fetch_all=True
+                )
+                if subj_results:
+                    suggestions.extend(subj_results)
+            except Exception as e:
+                logger.debug(f"Subject suggestion error: {e}")
+
+        # Deduplicate by suggestion_text
+        seen = set()
+        unique = []
+        for s in suggestions:
+            key = s['suggestion_text'].lower()
+            if key not in seen:
+                seen.add(key)
+                unique.append(s)
+
+        return unique[:limit]
+
+    @staticmethod
+    def get_popular_topics(subject=None, limit=12):
+        """
+        Return the most-asked topics for showing as quick-pick chips
+        on the search bar when it is empty.
+        """
+        subject_clause = "WHERE p.subject = %s" if subject else ""
+        params = [subject] if subject else []
+
+        query = f"""
+            SELECT
+                t.topic_name AS suggestion_text,
+                'topic' AS suggestion_type,
+                COUNT(q.id) AS question_count
+            FROM questions q
+            JOIN topics t ON q.topic_id = t.id
+            JOIN papers p ON q.paper_id = p.id
+            {subject_clause}
+            GROUP BY q.topic_id, t.topic_name
+            ORDER BY question_count DESC
+            LIMIT %s
+        """
+        params.append(limit)
+        try:
+            result = DatabaseConnection.execute_query(query, params, fetch_all=True)
+            return result if result else []
+        except Exception as e:
+            logger.debug(f"Popular topics error: {e}")
+            return []
 
     @staticmethod
     def update_question_topic(question_id, topic_id):

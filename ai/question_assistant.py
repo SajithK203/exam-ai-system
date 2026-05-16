@@ -282,3 +282,126 @@ OPTION D:
         except Exception as e:
             logger.warning(f"AI topic classification failed: {e}")
             return None
+
+    # -------------------------------------------------------------------------
+    # Semantic Similarity Scanner
+    # -------------------------------------------------------------------------
+
+    @staticmethod
+    def scan_for_ai_similar_groups(questions_list, subject=None):
+        """
+        Use AI to identify semantically similar question pairs from a list.
+        Detects: same theory, same solving technique, same concept — even if
+        worded differently.
+
+        Args:
+            questions_list: List of dicts with keys: id, question_text, topic_name, year
+            subject: Subject name for context
+
+        Returns:
+            List of dicts: [{
+                'group_label': str,       # e.g. "Stack Operations"
+                'similarity_reason': str, # why they are similar
+                'questions': [            # matching questions
+                    {'id': int, 'text': str, 'year': int/str, 'topic': str}
+                ]
+            }]
+        """
+        if not questions_list:
+            return []
+
+        # Build numbered list for the AI
+        lines = []
+        for i, q in enumerate(questions_list, 1):
+            year = q.get('year', '?')
+            topic = q.get('topic_name', 'Unknown')
+            text = q.get('question_text', '')[:150].replace('\n', ' ')
+            lines.append(f"[{i}] (Year:{year}, Topic:{topic}) {text}")
+
+        numbered_list = "\n".join(lines)
+        context = f"Subject: {subject}\n" if subject else ""
+
+        prompt = f"""You are an expert academic analyst. Analyze these exam questions and identify groups of questions that test the SAME concept, theory, or solving technique — even if the wording is different.
+
+{context}
+Questions:
+{numbered_list}
+
+Find groups where questions are semantically similar (same topic + same required knowledge/technique).
+Return ONLY groups that have 2 or more questions.
+
+Format your response EXACTLY like this (repeat for each group):
+GROUP: [short descriptive label for the shared concept]
+REASON: [one sentence why these questions are similar]
+QUESTIONS: [comma-separated numbers from the list, e.g. 1, 3, 7]
+---
+
+If no similar groups exist, reply with: NO_GROUPS"""
+
+        try:
+            client = get_groq_client()
+            response = client.generate_response(prompt, temperature=0.2, max_tokens=800)
+            return QuestionAssistant._parse_similarity_response(response, questions_list)
+        except Exception as e:
+            logger.error(f"AI similarity scan failed: {e}")
+            return []
+
+    @staticmethod
+    def _parse_similarity_response(response_text, questions_list):
+        """Parse the AI similarity scanner response into structured groups."""
+        import re
+
+        if 'NO_GROUPS' in response_text:
+            return []
+
+        groups = []
+        # Split by the --- separator
+        blocks = re.split(r'\n---\n?', response_text)
+
+        for block in blocks:
+            block = block.strip()
+            if not block:
+                continue
+
+            group_match = re.search(r'GROUP:\s*(.+)', block)
+            reason_match = re.search(r'REASON:\s*(.+)', block)
+            questions_match = re.search(r'QUESTIONS:\s*(.+)', block)
+
+            if not (group_match and questions_match):
+                continue
+
+            label = group_match.group(1).strip()
+            reason = reason_match.group(1).strip() if reason_match else ''
+            q_nums_str = questions_match.group(1).strip()
+
+            # Parse question indices (1-based)
+            q_indices = []
+            for num_str in re.split(r'[,\s]+', q_nums_str):
+                try:
+                    idx = int(num_str.strip()) - 1  # Convert to 0-based
+                    if 0 <= idx < len(questions_list):
+                        q_indices.append(idx)
+                except ValueError:
+                    continue
+
+            if len(q_indices) < 2:
+                continue
+
+            matched_questions = []
+            for idx in q_indices:
+                q = questions_list[idx]
+                matched_questions.append({
+                    'id': q.get('id'),
+                    'text': q.get('question_text', ''),
+                    'year': q.get('year', '?'),
+                    'topic': q.get('topic_name', 'Unknown'),
+                    'type': q.get('question_type', 'Unknown'),
+                })
+
+            groups.append({
+                'group_label': label,
+                'similarity_reason': reason,
+                'questions': matched_questions,
+            })
+
+        return groups

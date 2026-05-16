@@ -363,3 +363,192 @@ class AnalyticsQueries:
         except Exception as e:
             logger.error(f"Error fetching question examples: {e}")
             raise
+
+    @staticmethod
+    def get_topic_importance_scores(subject, years=5):
+        """
+        Calculate an intelligent importance score for each topic.
+        Importance = (Frequency * 3) + (Average Difficulty Score * 2) + (Unique Years Appeared * 4)
+        """
+        query = """
+            SELECT 
+                t.topic_name,
+                COUNT(q.id) as frequency,
+                COUNT(DISTINCT p.year) as years_appeared,
+                ROUND(AVG(CASE 
+                    WHEN q.difficulty_level = 'Hard' THEN 3
+                    WHEN q.difficulty_level = 'Medium' THEN 2
+                    WHEN q.difficulty_level = 'Easy' THEN 1
+                    ELSE 1
+                END), 2) as avg_difficulty,
+                ROUND(
+                    (COUNT(q.id) * 3) + 
+                    (AVG(CASE 
+                        WHEN q.difficulty_level = 'Hard' THEN 3
+                        WHEN q.difficulty_level = 'Medium' THEN 2
+                        WHEN q.difficulty_level = 'Easy' THEN 1
+                        ELSE 1
+                    END) * 2) + 
+                    (COUNT(DISTINCT p.year) * 4)
+                , 2) as importance_score
+            FROM questions q
+            JOIN topics t ON q.topic_id = t.id
+            JOIN papers p ON q.paper_id = p.id
+            WHERE p.subject = %s
+            AND p.year >= (SELECT MAX(year) - %s FROM papers)
+            GROUP BY q.topic_id, t.topic_name
+            ORDER BY importance_score DESC
+        """
+        try:
+            result = DatabaseConnection.execute_query(query, (subject, years), fetch_all=True)
+            return result
+        except Exception as e:
+            logger.error(f"Error fetching topic importance scores: {e}")
+            raise
+
+    @staticmethod
+    def get_question_evolution(subject, topic_name):
+        """
+        Get the evolution of questions for a specific topic across years.
+        Groups questions by year to show how they have changed.
+        """
+        query = """
+            SELECT 
+                p.year,
+                q.question_text,
+                q.difficulty_level,
+                q.marks_allocated,
+                q.question_type
+            FROM questions q
+            JOIN papers p ON q.paper_id = p.id
+            JOIN topics t ON q.topic_id = t.id
+            WHERE p.subject = %s AND t.topic_name = %s
+            ORDER BY p.year ASC, q.difficulty_level ASC
+        """
+        try:
+            result = DatabaseConnection.execute_query(query, (subject, topic_name), fetch_all=True)
+            return result
+        except Exception as e:
+            logger.error(f"Error fetching question evolution: {e}")
+            raise
+
+    @staticmethod
+    def get_similar_question_groups(subject):
+        """
+        Detect 'similar' question groups by grouping on (topic + question_type + subject)
+        across multiple papers. A group appearing in 2+ papers means the same kind of
+        problem / theory / solving technique is repeatedly tested.
+
+        Returns list of groups, each with:
+          - topic_name
+          - question_type
+          - papers_count: how many different papers tested this topic+type
+          - total_questions: total questions in this group
+          - years: comma-separated years this appeared
+          - sample_questions: up to 3 example questions from different years
+        """
+        query = """
+            SELECT
+                COALESCE(t.topic_name, 'Unclassified') AS topic_name,
+                q.question_type,
+                p.subject,
+                COUNT(DISTINCT q.paper_id) AS papers_count,
+                COUNT(q.id) AS total_questions,
+                GROUP_CONCAT(DISTINCT p.year ORDER BY p.year DESC SEPARATOR ', ') AS years,
+                MAX(q.difficulty_level) AS max_difficulty,
+                ROUND(AVG(q.marks_allocated), 1) AS avg_marks
+            FROM questions q
+            JOIN papers p ON q.paper_id = p.id
+            LEFT JOIN topics t ON q.topic_id = t.id
+            WHERE p.subject = %s
+            GROUP BY q.topic_id, t.topic_name, q.question_type, p.subject
+            HAVING papers_count > 1
+            ORDER BY papers_count DESC, total_questions DESC
+        """
+        try:
+            result = DatabaseConnection.execute_query(query, (subject,), fetch_all=True)
+            return result if result else []
+        except Exception as e:
+            logger.error(f"Error fetching similar question groups: {e}")
+            raise
+
+    @staticmethod
+    def get_questions_in_group(subject, topic_name, question_type, limit=10):
+        """
+        Get sample questions from a specific topic+type group,
+        one per year where possible, to show variety across papers.
+        """
+        if topic_name == 'Unclassified':
+            query = """
+                SELECT
+                    q.id,
+                    q.question_text,
+                    q.difficulty_level,
+                    q.marks_allocated,
+                    q.question_type,
+                    p.year,
+                    p.exam_type
+                FROM questions q
+                JOIN papers p ON q.paper_id = p.id
+                WHERE p.subject = %s
+                  AND q.topic_id IS NULL
+                  AND q.question_type = %s
+                ORDER BY p.year DESC
+                LIMIT %s
+            """
+            params = (subject, question_type, limit)
+        else:
+            query = """
+                SELECT
+                    q.id,
+                    q.question_text,
+                    q.difficulty_level,
+                    q.marks_allocated,
+                    q.question_type,
+                    p.year,
+                    p.exam_type
+                FROM questions q
+                JOIN papers p ON q.paper_id = p.id
+                JOIN topics t ON q.topic_id = t.id
+                WHERE p.subject = %s
+                  AND t.topic_name = %s
+                  AND q.question_type = %s
+                ORDER BY p.year DESC
+                LIMIT %s
+            """
+            params = (subject, topic_name, question_type, limit)
+        try:
+            result = DatabaseConnection.execute_query(query, params, fetch_all=True)
+            return result if result else []
+        except Exception as e:
+            logger.error(f"Error fetching questions in group: {e}")
+            raise
+
+    @staticmethod
+    def get_all_questions_for_ai_scan(subject, limit=60):
+        """
+        Fetch a representative sample of questions for a subject
+        to feed into the AI semantic similarity scanner.
+        Returns id, text, topic, type, year.
+        """
+        query = """
+            SELECT
+                q.id,
+                q.question_text,
+                COALESCE(t.topic_name, 'Unclassified') AS topic_name,
+                q.question_type,
+                p.year
+            FROM questions q
+            JOIN papers p ON q.paper_id = p.id
+            LEFT JOIN topics t ON q.topic_id = t.id
+            WHERE p.subject = %s
+            ORDER BY p.year DESC, q.topic_id ASC
+            LIMIT %s
+        """
+        try:
+            result = DatabaseConnection.execute_query(query, (subject, limit), fetch_all=True)
+            return result if result else []
+        except Exception as e:
+            logger.error(f"Error fetching questions for AI scan: {e}")
+            raise
+
