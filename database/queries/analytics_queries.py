@@ -94,13 +94,20 @@ class AnalyticsQueries:
         """Get questions that appear in multiple papers."""
         query = """
             SELECT 
-                q.question_text,
+                MAX(q.question_text) as question_text,
                 t.topic_name,
+                p.subject,
+                q.question_type,
                 COUNT(DISTINCT q.paper_id) as paper_count,
                 COUNT(q.id) as total_occurrences
             FROM questions q
+            JOIN papers p ON q.paper_id = p.id
             LEFT JOIN topics t ON q.topic_id = t.id
-            GROUP BY LOWER(q.question_text)
+            GROUP BY 
+                LOWER(q.question_text),
+                t.topic_name,
+                p.subject,
+                q.question_type
             HAVING paper_count > 1
             ORDER BY paper_count DESC, total_occurrences DESC
         """

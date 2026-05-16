@@ -185,10 +185,22 @@ class QuestionQueries:
     def get_repeated_questions():
         """Get questions that appeared multiple times."""
         query = """
-            SELECT q.*, p.subject, COUNT(*) as appearance_count
+            SELECT 
+                MAX(q.id) as id,
+                MAX(q.question_text) as question_text,
+                q.topic_id,
+                q.question_type,
+                MAX(q.difficulty_level) as difficulty_level,
+                MAX(q.marks_allocated) as marks_allocated,
+                p.subject, 
+                COUNT(DISTINCT q.paper_id) as appearance_count
             FROM questions q
             JOIN papers p ON q.paper_id = p.id
-            GROUP BY LOWER(q.question_text)
+            GROUP BY 
+                LOWER(q.question_text),
+                q.topic_id,
+                q.question_type,
+                p.subject
             HAVING appearance_count > 1
             ORDER BY appearance_count DESC
         """
