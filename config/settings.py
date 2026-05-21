@@ -4,6 +4,7 @@ Centralized configuration management.
 """
 
 import os
+import sys
 from pathlib import Path
 from dotenv import load_dotenv
 
@@ -14,7 +15,7 @@ try:
 except ImportError:
     _streamlit_available = False
 
-# Load environment variables
+# Load environment variables from .env file
 load_dotenv()
 
 # Project root
@@ -22,22 +23,47 @@ PROJECT_ROOT = Path(__file__).parent.parent
 
 # Helper function to get config from Streamlit secrets or environment
 def _get_config(key, default=None):
-    """Get configuration from Streamlit secrets or environment variables."""
+    """
+    Get configuration from Streamlit secrets or environment variables.
+    Priority: Streamlit secrets > Environment variables > Default
+    """
+    # Try Streamlit secrets first (only available when running on Streamlit Cloud)
     if _streamlit_available:
         try:
-            return st.secrets.get(key) or os.getenv(key, default)
-        except:
-            return os.getenv(key, default)
-    return os.getenv(key, default)
+            # Check if we're actually in Streamlit context
+            if hasattr(st, 'secrets') and st.secrets:
+                secret_value = st.secrets.get(key)
+                if secret_value:
+                    print(f"[CONFIG] Loading {key} from Streamlit secrets", file=sys.stderr)
+                    return secret_value
+        except Exception as e:
+            print(f"[CONFIG] Could not read {key} from secrets: {e}", file=sys.stderr)
+    
+    # Fall back to environment variables
+    env_value = os.getenv(key)
+    if env_value:
+        print(f"[CONFIG] Loading {key} from environment", file=sys.stderr)
+        return env_value
+    
+    # Use default
+    if default is not None:
+        print(f"[CONFIG] Using default for {key}", file=sys.stderr)
+    return default
 
 # Database Configuration
 # Note: For Aiven, SSL is required by default
+DB_HOST = _get_config("DB_HOST", "localhost")
+DB_USER = _get_config("DB_USER", "root")
+DB_PASSWORD = _get_config("DB_PASSWORD", "")
+DB_NAME = _get_config("DB_NAME", "exam_analysis_system")
+DB_PORT = _get_config("DB_PORT", "3306")
+
 DB_CONFIG = {
-    "host": _get_config("DB_HOST", "localhost"),
-    "user": _get_config("DB_USER", "root"),
-    "password": _get_config("DB_PASSWORD", ""),
-    "database": _get_config("DB_NAME", "exam_analysis_system"),
-    "port": int(_get_config("DB_PORT", "3306")),
+    "host": DB_HOST,
+    "user": DB_USER,
+    "password": DB_PASSWORD,
+    "database": DB_NAME,
+    "port": int(DB_PORT),
     "autocommit": True,
     "use_unicode": True,
     "charset": "utf8mb4",
