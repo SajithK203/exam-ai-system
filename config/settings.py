@@ -31,6 +31,7 @@ def _get_config(key, default=None):
     return os.getenv(key, default)
 
 # Database Configuration
+# Note: For Aiven, SSL is required by default
 DB_CONFIG = {
     "host": _get_config("DB_HOST", "localhost"),
     "user": _get_config("DB_USER", "root"),
@@ -39,7 +40,10 @@ DB_CONFIG = {
     "port": int(_get_config("DB_PORT", "3306")),
     "autocommit": True,
     "use_unicode": True,
-    "charset": "utf8mb4"
+    "charset": "utf8mb4",
+    "ssl_disabled": False,  # Enable SSL for Aiven
+    "ssl_verify_cert": False,  # Trust all certs (Aiven requirement)
+    "ssl_verify_identity": False
 }
 
 # API Configuration
