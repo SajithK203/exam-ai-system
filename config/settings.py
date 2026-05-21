@@ -7,19 +7,36 @@ import os
 from pathlib import Path
 from dotenv import load_dotenv
 
+# Try to import streamlit for Streamlit secrets support
+try:
+    import streamlit as st
+    _streamlit_available = True
+except ImportError:
+    _streamlit_available = False
+
 # Load environment variables
 load_dotenv()
 
 # Project root
 PROJECT_ROOT = Path(__file__).parent.parent
 
+# Helper function to get config from Streamlit secrets or environment
+def _get_config(key, default=None):
+    """Get configuration from Streamlit secrets or environment variables."""
+    if _streamlit_available:
+        try:
+            return st.secrets.get(key) or os.getenv(key, default)
+        except:
+            return os.getenv(key, default)
+    return os.getenv(key, default)
+
 # Database Configuration
 DB_CONFIG = {
-    "host": os.getenv("DB_HOST", "localhost"),
-    "user": os.getenv("DB_USER", "root"),
-    "password": os.getenv("DB_PASSWORD", ""),
-    "database": os.getenv("DB_NAME", "exam_analysis_system"),
-    "port": int(os.getenv("DB_PORT", 3306)),
+    "host": _get_config("DB_HOST", "localhost"),
+    "user": _get_config("DB_USER", "root"),
+    "password": _get_config("DB_PASSWORD", ""),
+    "database": _get_config("DB_NAME", "exam_analysis_system"),
+    "port": int(_get_config("DB_PORT", "3306")),
     "autocommit": True,
     "use_unicode": True,
     "charset": "utf8mb4"
