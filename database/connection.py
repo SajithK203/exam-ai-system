@@ -107,16 +107,25 @@ class DatabaseConnection:
 
 
 def test_connection():
-    """Test database connection."""
+    """Test database connection with detailed debug info."""
     try:
+        # Log connection details (sanitized)
+        from config.settings import DB_CONFIG
+        logger.info(f"Attempting connection to: {DB_CONFIG['host']}:{DB_CONFIG['port']}")
+        logger.info(f"Database: {DB_CONFIG['database']}, User: {DB_CONFIG['user']}")
+        
         conn = DatabaseConnection.get_connection()
         cursor = conn.cursor()
         cursor.execute("SELECT 1")
-        cursor.fetchone()
+        result = cursor.fetchone()
         cursor.close()
         conn.close()
-        logger.info("Database connection test successful")
+        logger.info("✅ Database connection test successful")
         return True
     except Error as e:
-        logger.error(f"Database connection test failed: {e}")
+        logger.error(f"❌ MySQL Error: {e}")
+        logger.error(f"Error Code: {e.errno if hasattr(e, 'errno') else 'N/A'}")
+        return False
+    except Exception as e:
+        logger.error(f"❌ Unexpected error: {type(e).__name__}: {e}")
         return False
