@@ -3,12 +3,32 @@ Database connection management for MySQL.
 Handles connection pooling and query execution.
 """
 
+import os
+import streamlit as st
 import mysql.connector
 from mysql.connector import Error, pooling
-from config.settings import DB_CONFIG
 import logging
 
 logger = logging.getLogger(__name__)
+
+# Database Configuration with Streamlit Secrets Support
+DB_HOST = st.secrets.get("mysql-331df7c4-exam-ai.i.aivencloud.com") or os.getenv("mysql-331df7c4-exam-ai.i.aivencloud.com")
+DB_PORT = st.secrets.get("DB_PORT") or os.getenv("DB_PORT", "17660")
+DB_USER = st.secrets.get("DB_USER") or os.getenv("DB_USER", "avnadmin")
+DB_PASSWORD = st.secrets.get("DB_PASSWORD") or os.getenv("DB_PASSWORD", "AVNS_m2XAVFJOB3MV4EW0vBb")
+DB_NAME = st.secrets.get("DB_NAME") or os.getenv("DB_NAME", "defaultdb")
+
+# Create DB_CONFIG dictionary for backward compatibility
+DB_CONFIG = {
+    "host": DB_HOST,
+    "user": DB_USER,
+    "password": DB_PASSWORD,
+    "database": DB_NAME,
+    "port": int(DB_PORT),
+    "autocommit": True,
+    "use_unicode": True,
+    "charset": "utf8mb4"
+}
 
 
 class DatabaseConnection:
