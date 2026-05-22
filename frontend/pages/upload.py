@@ -79,6 +79,7 @@ def show_upload_page():
                     # Step 1: Extract text (with OCR fallback)
                     st.info("Step 1/4: Extracting text from PDF...")
                     pdf_processor = PDFProcessor()
+                    used_ocr = False
                     raw_text, used_ocr = pdf_processor.extract_text_from_pdf(str(file_path))
                     progress_bar.progress(25)
 
@@ -111,6 +112,10 @@ def show_upload_page():
                     # Step 4: Classify, infer difficulty, store
                     st.info("Step 4/4: Classifying topics, inferring difficulty, and storing...")
 
+                    # Initialize counters before the DB block so they're always defined
+                    ai_classified_count = 0
+                    mcq_count = 0
+
                     try:
                         # Store paper — get ID directly
                         paper_id = PaperQueries.create_paper(
@@ -124,8 +129,6 @@ def show_upload_page():
                         )
 
                         if paper_id:
-                            ai_classified_count = 0
-                            mcq_count = 0
 
                             for question_text in questions:
                                 question_data = extractor.parse_question_full(question_text)

@@ -12,6 +12,7 @@ CREATE TABLE IF NOT EXISTS papers (
     exam_type ENUM('Midterm', 'Final', 'Quiz', 'Practice') DEFAULT 'Final',
     file_path VARCHAR(500) NOT NULL UNIQUE,
     file_size INT,
+    file_hash VARCHAR(64) DEFAULT NULL,
     total_questions INT DEFAULT 0,
     upload_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     last_modified TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
