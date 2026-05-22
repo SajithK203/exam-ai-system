@@ -52,25 +52,43 @@ def _get_config(key, default=None):
 
 # Database Configuration
 # Note: For Aiven, SSL is required by default
-DB_HOST = _get_config("DB_HOST", "localhost")
-DB_USER = _get_config("DB_USER", "root")
-DB_PASSWORD = _get_config("DB_PASSWORD", "")
-DB_NAME = _get_config("DB_NAME", "exam_analysis_system")
-DB_PORT = _get_config("DB_PORT", "3306")
+# IMPORTANT: Use get_db_config() function instead of DB_CONFIG directly,
+# so that Streamlit secrets are read lazily at connection time (not at import time).
 
-DB_CONFIG = {
-    "host": DB_HOST,
-    "user": DB_USER,
-    "password": DB_PASSWORD,
-    "database": DB_NAME,
-    "port": int(DB_PORT),
-    "autocommit": True,
-    "use_unicode": True,
-    "charset": "utf8mb4",
-    "ssl_disabled": False,  # Enable SSL for Aiven
-    "ssl_verify_cert": False,  # Trust all certs (Aiven requirement)
-    "ssl_verify_identity": False
-}
+def get_db_config():
+    """
+    Return DB config dict, reading from Streamlit secrets or environment each call.
+    This lazy approach ensures st.secrets is fully initialized before we read it.
+    """
+    host     = _get_config("DB_HOST",     "localhost")
+    user     = _get_config("DB_USER",     "root")
+    password = _get_config("DB_PASSWORD", "")
+    name     = _get_config("DB_NAME",     "exam_analysis_system")
+    port     = _get_config("DB_PORT",     "3306")
+
+    return {
+        "host":               host,
+        "user":               user,
+        "password":           password,
+        "database":           name,
+        "port":               int(port),
+        "autocommit":         True,
+        "use_unicode":        True,
+        "charset":            "utf8mb4",
+        "ssl_disabled":       False,   # Enable SSL for Aiven
+        "ssl_verify_cert":    False,   # Trust all certs (Aiven requirement)
+        "ssl_verify_identity":False
+    }
+
+# Keep DB_CONFIG as a backward-compatible alias (lazy call at import time is fine
+# for local use; on Streamlit Cloud always use get_db_config() at connect time)
+DB_HOST     = _get_config("DB_HOST",     "localhost")
+DB_USER     = _get_config("DB_USER",     "root")
+DB_PASSWORD = _get_config("DB_PASSWORD", "")
+DB_NAME     = _get_config("DB_NAME",     "exam_analysis_system")
+DB_PORT     = _get_config("DB_PORT",     "3306")
+
+DB_CONFIG = get_db_config()
 
 # API Configuration
 GROQ_API_KEY = _get_config("GROQ_API_KEY", "")

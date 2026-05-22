@@ -11,8 +11,8 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-# Database Configuration imported from settings
-from config.settings import DB_CONFIG
+# Import lazy config function - secrets are read at connection time, not import time
+from config.settings import get_db_config
 
 
 class DatabaseConnection:
@@ -25,11 +25,15 @@ class DatabaseConnection:
         """Get or create connection pool."""
         if cls._pool is None:
             try:
+                # Call get_db_config() here (not at import time) so that
+                # Streamlit secrets are fully loaded before we read them.
+                db_config = get_db_config()
+                logger.info(f"Creating pool → host={db_config['host']} port={db_config['port']} db={db_config['database']}")
                 cls._pool = pooling.MySQLConnectionPool(
                     pool_name="exam_analysis_pool",
                     pool_size=5,
                     pool_reset_session=True,
-                    **DB_CONFIG
+                    **db_config
                 )
                 logger.info("Connection pool created successfully")
             except Error as e:
@@ -93,10 +97,10 @@ class DatabaseConnection:
 def test_connection():
     """Test database connection with detailed debug info."""
     try:
-        # Log connection details (sanitized)
-        from config.settings import DB_CONFIG
-        logger.info(f"Attempting connection to: {DB_CONFIG['host']}:{DB_CONFIG['port']}")
-        logger.info(f"Database: {DB_CONFIG['database']}, User: {DB_CONFIG['user']}")
+        # Read config lazily so secrets are available
+        db_config = get_db_config()
+        logger.info(f"Attempting connection to: {db_config['host']}:{db_config['port']}")
+        logger.info(f"Database: {db_config['database']}, User: {db_config['user']}")
         
         conn = DatabaseConnection.get_connection()
         cursor = conn.cursor()
