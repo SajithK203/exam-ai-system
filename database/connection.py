@@ -1,11 +1,8 @@
 """
 Database connection management for MySQL (Aiven Cloud).
-Uses direct connections (no pooling) to ensure secrets are
-read fresh at runtime on Streamlit Cloud.
+Uses PyMySQL (pure Python) for maximum compatibility with Streamlit Cloud.
 """
 
-import mysql.connector
-from mysql.connector import Error
 import logging
 
 logger = logging.getLogger(__name__)
@@ -13,82 +10,84 @@ logger = logging.getLogger(__name__)
 
 def _get_db_config():
     """
-    Read DB configuration from Streamlit secrets or environment variables.
-    Called fresh every time a connection is needed so that
-    st.secrets is fully initialised before we read it.
+    Read DB credentials from Streamlit secrets (Streamlit Cloud)
+    or environment variables (.env file for local dev).
+    Called fresh every time so secrets are always available.
     """
     import os
-    import sys
 
-    # Try Streamlit secrets first (Streamlit Cloud production)
+    host = port = user = password = name = None
+
+    # --- Try Streamlit secrets (priority 1) ---
     try:
         import streamlit as st
-        if hasattr(st, 'secrets'):
+        if hasattr(st, "secrets"):
             host     = st.secrets.get("DB_HOST")
             port     = st.secrets.get("DB_PORT")
             user     = st.secrets.get("DB_USER")
             password = st.secrets.get("DB_PASSWORD")
             name     = st.secrets.get("DB_NAME")
-
-            if host and host.strip():
-                logger.info(f"DB config loaded from Streamlit secrets → host={host}")
-                return {
-                    "host":                host.strip(),
-                    "port":                int(str(port).strip()) if port else 3306,
-                    "user":                user.strip() if user else "root",
-                    "password":            str(password).strip() if password else "",
-                    "database":            name.strip() if name else "defaultdb",
-                    "autocommit":          True,
-                    "use_unicode":         True,
-                    "charset":             "utf8mb4",
-                    "ssl_disabled":        False,
-                    "ssl_verify_cert":     False,
-                    "ssl_verify_identity": False,
-                    "connection_timeout":  10,
-                }
     except Exception as e:
-        logger.warning(f"Could not read from Streamlit secrets: {e}")
+        logger.debug(f"Streamlit secrets not available: {e}")
 
-    # Fall back to environment variables (local .env)
-    host = os.getenv("DB_HOST", "localhost")
-    logger.info(f"DB config loaded from environment → host={host}")
+    # --- Fall back to environment variables (priority 2) ---
+    host     = (host     or os.getenv("DB_HOST",     "localhost")).strip()
+    user     = (user     or os.getenv("DB_USER",     "root")).strip()
+    password = str(password or os.getenv("DB_PASSWORD", "")).strip()
+    name     = (name     or os.getenv("DB_NAME",     "exam_analysis_system")).strip()
+    port     = int(str(port or os.getenv("DB_PORT",  "3306")).strip())
+
+    logger.info(f"DB → host={host}  port={port}  db={name}  user={user}")
+
     return {
-        "host":                os.getenv("DB_HOST", "localhost"),
-        "port":                int(os.getenv("DB_PORT", "3306")),
-        "user":                os.getenv("DB_USER", "root"),
-        "password":            os.getenv("DB_PASSWORD", ""),
-        "database":            os.getenv("DB_NAME", "exam_analysis_system"),
-        "autocommit":          True,
-        "use_unicode":         True,
-        "charset":             "utf8mb4",
-        "ssl_disabled":        False,
-        "ssl_verify_cert":     False,
-        "ssl_verify_identity": False,
-        "connection_timeout":  10,
+        "host":     host,
+        "port":     port,
+        "user":     user,
+        "password": password,
+        "database": name,
     }
 
 
 def get_connection():
-    """Open and return a fresh MySQL connection (no pooling)."""
-    config = _get_db_config()
-    try:
-        conn = mysql.connector.connect(**config)
-        return conn
-    except Error as e:
-        logger.error(f"Error connecting to MySQL at {config['host']}:{config['port']} — {e}")
-        raise
+    """
+    Open and return a fresh PyMySQL connection.
+    SSL is configured to trust Aiven without a local CA certificate.
+    """
+    import pymysql
+    import ssl as _ssl
+
+    cfg = _get_db_config()
+
+    # Build an SSL context that skips certificate verification
+    # (Aiven enforces SSL but Streamlit Cloud doesn't have the Aiven CA cert)
+    ssl_ctx = _ssl.create_default_context()
+    ssl_ctx.check_hostname = False
+    ssl_ctx.verify_mode = _ssl.CERT_NONE
+
+    conn = pymysql.connect(
+        host     = cfg["host"],
+        port     = cfg["port"],
+        user     = cfg["user"],
+        password = cfg["password"],
+        database = cfg["database"],
+        charset  = "utf8mb4",
+        autocommit = True,
+        connect_timeout = 10,
+        ssl      = ssl_ctx,
+        cursorclass = pymysql.cursors.DictCursor,
+    )
+    return conn
 
 
 class DatabaseConnection:
     """
-    Thin wrapper around get_connection() kept for backward-compatibility
-    with the rest of the code that calls DatabaseConnection.get_connection()
-    or DatabaseConnection.execute_query().
+    Thin wrapper kept for backward-compatibility with the rest of the codebase.
+    All methods create a fresh connection — no pooling, no caching.
     """
 
     @classmethod
     def get_connection(cls):
-        """Get a fresh direct connection."""
+        """Return a fresh database connection."""
         return get_connection()
 
     @classmethod
@@ -97,8 +96,8 @@ class DatabaseConnection:
         conn   = None
         cursor = None
         try:
-            conn   = cls.get_connection()
-            cursor = conn.cursor(dictionary=True)
+            conn   = get_connection()
+            cursor = conn.cursor()          # DictCursor already set at connect time
             cursor.execute(query, params or ())
 
             if fetch_one:
@@ -110,7 +109,7 @@ class DatabaseConnection:
 
             conn.commit()
             return result
-        except Error as e:
+        except Exception as e:
             logger.error(f"Database error: {e}")
             if conn:
                 try:
@@ -134,9 +133,7 @@ class DatabaseConnection:
 def test_connection():
     """Test database connection — used by the sidebar status badge."""
     try:
-        config = _get_db_config()
-        logger.info(f"Testing connection → host={config['host']} port={config['port']} db={config['database']}")
-        conn   = mysql.connector.connect(**config)
+        conn   = get_connection()
         cursor = conn.cursor()
         cursor.execute("SELECT 1")
         cursor.fetchone()
@@ -144,9 +141,6 @@ def test_connection():
         conn.close()
         logger.info("Database connection test PASSED")
         return True
-    except Error as e:
-        logger.error(f"Database connection test FAILED: {e}")
-        return False
     except Exception as e:
-        logger.error(f"Unexpected error during connection test: {type(e).__name__}: {e}")
+        logger.error(f"Database connection test FAILED: {e}")
         return False
