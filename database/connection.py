@@ -1,119 +1,152 @@
 """
-Database connection management for MySQL.
-Handles connection pooling and query execution.
+Database connection management for MySQL (Aiven Cloud).
+Uses direct connections (no pooling) to ensure secrets are
+read fresh at runtime on Streamlit Cloud.
 """
 
-import os
-import streamlit as st
 import mysql.connector
-from mysql.connector import Error, pooling
+from mysql.connector import Error
 import logging
 
 logger = logging.getLogger(__name__)
 
-# Import lazy config function - secrets are read at connection time, not import time
-from config.settings import get_db_config
+
+def _get_db_config():
+    """
+    Read DB configuration from Streamlit secrets or environment variables.
+    Called fresh every time a connection is needed so that
+    st.secrets is fully initialised before we read it.
+    """
+    import os
+    import sys
+
+    # Try Streamlit secrets first (Streamlit Cloud production)
+    try:
+        import streamlit as st
+        if hasattr(st, 'secrets'):
+            host     = st.secrets.get("DB_HOST")
+            port     = st.secrets.get("DB_PORT")
+            user     = st.secrets.get("DB_USER")
+            password = st.secrets.get("DB_PASSWORD")
+            name     = st.secrets.get("DB_NAME")
+
+            if host and host.strip():
+                logger.info(f"DB config loaded from Streamlit secrets → host={host}")
+                return {
+                    "host":                host.strip(),
+                    "port":                int(str(port).strip()) if port else 3306,
+                    "user":                user.strip() if user else "root",
+                    "password":            str(password).strip() if password else "",
+                    "database":            name.strip() if name else "defaultdb",
+                    "autocommit":          True,
+                    "use_unicode":         True,
+                    "charset":             "utf8mb4",
+                    "ssl_disabled":        False,
+                    "ssl_verify_cert":     False,
+                    "ssl_verify_identity": False,
+                    "connection_timeout":  10,
+                }
+    except Exception as e:
+        logger.warning(f"Could not read from Streamlit secrets: {e}")
+
+    # Fall back to environment variables (local .env)
+    host = os.getenv("DB_HOST", "localhost")
+    logger.info(f"DB config loaded from environment → host={host}")
+    return {
+        "host":                os.getenv("DB_HOST", "localhost"),
+        "port":                int(os.getenv("DB_PORT", "3306")),
+        "user":                os.getenv("DB_USER", "root"),
+        "password":            os.getenv("DB_PASSWORD", ""),
+        "database":            os.getenv("DB_NAME", "exam_analysis_system"),
+        "autocommit":          True,
+        "use_unicode":         True,
+        "charset":             "utf8mb4",
+        "ssl_disabled":        False,
+        "ssl_verify_cert":     False,
+        "ssl_verify_identity": False,
+        "connection_timeout":  10,
+    }
+
+
+def get_connection():
+    """Open and return a fresh MySQL connection (no pooling)."""
+    config = _get_db_config()
+    try:
+        conn = mysql.connector.connect(**config)
+        return conn
+    except Error as e:
+        logger.error(f"Error connecting to MySQL at {config['host']}:{config['port']} — {e}")
+        raise
 
 
 class DatabaseConnection:
-    """Database connection handler with connection pooling."""
-    
-    _pool = None
-    
-    @classmethod
-    def get_pool(cls):
-        """Get or create connection pool."""
-        if cls._pool is None:
-            try:
-                # Call get_db_config() here (not at import time) so that
-                # Streamlit secrets are fully loaded before we read them.
-                db_config = get_db_config()
-                logger.info(f"Creating pool → host={db_config['host']} port={db_config['port']} db={db_config['database']}")
-                cls._pool = pooling.MySQLConnectionPool(
-                    pool_name="exam_analysis_pool",
-                    pool_size=5,
-                    pool_reset_session=True,
-                    **db_config
-                )
-                logger.info("Connection pool created successfully")
-            except Error as e:
-                logger.error(f"Error creating connection pool: {e}")
-                raise
-        return cls._pool
-    
+    """
+    Thin wrapper around get_connection() kept for backward-compatibility
+    with the rest of the code that calls DatabaseConnection.get_connection()
+    or DatabaseConnection.execute_query().
+    """
+
     @classmethod
     def get_connection(cls):
-        """Get connection from pool."""
-        try:
-            pool = cls.get_pool()
-            conn = pool.get_connection()
-            logger.debug("Connection obtained from pool")
-            return conn
-        except Error as e:
-            logger.error(f"Error getting connection: {e}")
-            raise
-    
+        """Get a fresh direct connection."""
+        return get_connection()
+
     @classmethod
     def execute_query(cls, query, params=None, fetch_one=False, fetch_all=False):
-        """Execute query and return results."""
-        conn = None
+        """Execute a query and return results."""
+        conn   = None
         cursor = None
         try:
-            conn = cls.get_connection()
+            conn   = cls.get_connection()
             cursor = conn.cursor(dictionary=True)
             cursor.execute(query, params or ())
-            
+
             if fetch_one:
                 result = cursor.fetchone()
             elif fetch_all:
                 result = cursor.fetchall()
             else:
                 result = cursor.rowcount
-            
+
             conn.commit()
             return result
         except Error as e:
             logger.error(f"Database error: {e}")
             if conn:
-                conn.rollback()
+                try:
+                    conn.rollback()
+                except Exception:
+                    pass
             raise
         finally:
             if cursor:
-                cursor.close()
+                try:
+                    cursor.close()
+                except Exception:
+                    pass
             if conn:
-                conn.close()
-    
-    @classmethod
-    def close_pool(cls):
-        """Close connection pool."""
-        if cls._pool:
-            try:
-                cls._pool._cnx_queue.queue.clear()
-                logger.info("Connection pool closed")
-            except Exception as e:
-                logger.error(f"Error closing pool: {e}")
+                try:
+                    conn.close()
+                except Exception:
+                    pass
 
 
 def test_connection():
-    """Test database connection with detailed debug info."""
+    """Test database connection — used by the sidebar status badge."""
     try:
-        # Read config lazily so secrets are available
-        db_config = get_db_config()
-        logger.info(f"Attempting connection to: {db_config['host']}:{db_config['port']}")
-        logger.info(f"Database: {db_config['database']}, User: {db_config['user']}")
-        
-        conn = DatabaseConnection.get_connection()
+        config = _get_db_config()
+        logger.info(f"Testing connection → host={config['host']} port={config['port']} db={config['database']}")
+        conn   = mysql.connector.connect(**config)
         cursor = conn.cursor()
         cursor.execute("SELECT 1")
-        result = cursor.fetchone()
+        cursor.fetchone()
         cursor.close()
         conn.close()
-        logger.info("✅ Database connection test successful")
+        logger.info("Database connection test PASSED")
         return True
     except Error as e:
-        logger.error(f"❌ MySQL Error: {e}")
-        logger.error(f"Error Code: {e.errno if hasattr(e, 'errno') else 'N/A'}")
+        logger.error(f"Database connection test FAILED: {e}")
         return False
     except Exception as e:
-        logger.error(f"❌ Unexpected error: {type(e).__name__}: {e}")
+        logger.error(f"Unexpected error during connection test: {type(e).__name__}: {e}")
         return False
