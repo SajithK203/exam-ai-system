@@ -52,8 +52,9 @@ logs/
 uploads/
 *.pdf
 
-# Streamlit cache
+# Streamlit cache and secrets
 .streamlit/cache/
+.streamlit/secrets.toml
 
 # IDE
 .pytest_cache/

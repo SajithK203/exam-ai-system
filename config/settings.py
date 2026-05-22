@@ -31,9 +31,9 @@ def _get_config(key, default=None):
     if _streamlit_available:
         try:
             # Check if we're actually in Streamlit context
-            if hasattr(st, 'secrets') and st.secrets:
+            if hasattr(st, 'secrets'):
                 secret_value = st.secrets.get(key)
-                if secret_value:
+                if secret_value is not None and secret_value != "":
                     print(f"[CONFIG] Loading {key} from Streamlit secrets", file=sys.stderr)
                     return secret_value
         except Exception as e:
@@ -73,7 +73,7 @@ DB_CONFIG = {
 }
 
 # API Configuration
-GROQ_API_KEY = os.getenv("GROQ_API_KEY", "")
+GROQ_API_KEY = _get_config("GROQ_API_KEY", "")
 
 # File Upload Configuration
 UPLOAD_FOLDER = os.path.join(PROJECT_ROOT, os.getenv("UPLOAD_FOLDER", "uploads"))
