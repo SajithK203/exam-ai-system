@@ -321,6 +321,6 @@ def show_insights_page():
                 5. Combine all for comprehensive preparation
                 """)
         
-        except Exception as e:
-            st.error(f"Error loading insights: {e}")
-            logger.error(f"Insights page error: {e}")
+    except Exception as e:
+        st.error(f"Error loading insights: {e}")
+        logger.error(f"Insights page error: {e}")
